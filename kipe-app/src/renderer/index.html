@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+  <title>Kipe - AI Development Workspace</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="screen active">
+      <div class="welcome-container">
+        <div class="welcome-header">
+          <h1 class="logo">Kipe</h1>
+          <p class="tagline">AI-Assisted Development Workspace</p>
+        </div>
+        
+        <div class="welcome-content">
+          <div class="recent-projects">
+            <h2>Recent Projects</h2>
+            <div id="projects-list" class="projects-list">
+              <!-- Projects will be rendered here -->
+            </div>
+            <button id="btn-open-project" class="btn btn-primary">
+              <span class="icon">📁</span>
+              Open Project
+            </button>
+          </div>
+          
+          <div class="quick-actions">
+            <h2>Quick Actions</h2>
+            <div class="action-cards">
+              <div class="action-card" data-action="new-project">
+                <span class="card-icon">✨</span>
+                <h3>New Project</h3>
+                <p>Create a new Kipe workspace</p>
+              </div>
+              <div class="action-card" data-action="settings">
+                <span class="card-icon">⚙️</span>
+                <h3>Settings</h3>
+                <p>Configure Kipe preferences</p>
+              </div>
+              <div class="action-card" data-action="docs">
+                <span class="card-icon">📖</span>
+                <h3>Documentation</h3>
+                <p>Learn how to use Kipe</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="welcome-footer">
+          <span class="version">Kipe v1.0.0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace Screen -->
+    <div id="workspace-screen" class="screen">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2 class="sidebar-logo">Kipe</h2>
+        </div>
+        
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-view="workspace">
+            <span class="nav-icon">🖥️</span>
+            <span class="nav-label">Workspace</span>
+          </button>
+          <button class="nav-item" data-view="agents">
+            <span class="nav-icon">🤖</span>
+            <span class="nav-label">Agents</span>
+          </button>
+          <button class="nav-item" data-view="processes">
+            <span class="nav-icon">⚡</span>
+            <span class="nav-label">Processes</span>
+          </button>
+          <button class="nav-item" data-view="activity">
+            <span class="nav-icon">📋</span>
+            <span class="nav-label">Activity</span>
+          </button>
+          <button class="nav-item" data-view="config">
+            <span class="nav-icon">📄</span>
+            <span class="nav-label">kipe.yml</span>
+          </button>
+          <button class="nav-item" data-view="settings">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-label">Settings</span>
+          </button>
+        </nav>
+        
+        <div class="sidebar-footer">
+          <button class="nav-item" id="btn-back-home">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">Home</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Header -->
+        <header class="workspace-header">
+          <div class="project-info">
+            <h1 id="project-name">Project Name</h1>
+            <span id="project-path" class="project-path">/path/to/project</span>
+          </div>
+          <div class="workspace-actions">
+            <button id="btn-swarm" class="btn btn-swarm">
+              <span class="icon">🐝</span>
+              Kipe Swarm
+            </button>
+            <button id="btn-new-terminal" class="btn btn-secondary">
+              <span class="icon">➕</span>
+              Terminal
+            </button>
+          </div>
+        </header>
+
+        <!-- Views -->
+        <div class="views-container">
+          <!-- Workspace View -->
+          <div id="view-workspace" class="view active">
+            <div class="panels-container">
+              <div class="panel terminal-panel">
+                <div class="panel-header">
+                  <span class="panel-title">Terminal</span>
+                  <div class="panel-actions">
+                    <button class="btn-icon" title="New Tab">+</button>
+                  </div>
+                </div>
+                <div id="terminal-container" class="terminal-container">
+                  <!-- Terminal will be rendered here -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agents View -->
+          <div id="view-agents" class="view">
+            <div class="view-header">
+              <h2>Kipe Agents</h2>
+              <button id="btn-new-agent" class="btn btn-primary">New Agent</button>
+            </div>
+            <div id="agents-list" class="agents-grid">
+              <!-- Agents will be rendered here -->
+            </div>
+          </div>
+
+          <!-- Processes View -->
+          <div id="view-processes" class="view">
+            <div class="view-header">
+              <h2>Processes</h2>
+              <button id="btn-new-process" class="btn btn-primary">New Process</button>
+            </div>
+            <div id="processes-table" class="processes-table">
+              <!-- Processes will be rendered here -->
+            </div>
+          </div>
+
+          <!-- Activity View -->
+          <div id="view-activity" class="view">
+            <div class="view-header">
+              <h2>Activity Feed</h2>
+              <button id="btn-clear-activity" class="btn btn-secondary">Clear</button>
+            </div>
+            <div id="activity-feed" class="activity-feed">
+              <!-- Activity events will be rendered here -->
+            </div>
+          </div>
+
+          <!-- Config View -->
+          <div id="view-config" class="view">
+            <div class="view-header">
+              <h2>kipe.yml Configuration</h2>
+              <button id="btn-save-config" class="btn btn-primary">Save</button>
+            </div>
+            <div class="config-editor">
+              <textarea id="config-yaml" class="yaml-editor" spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <!-- Settings View -->
+          <div id="view-settings" class="view">
+            <div class="view-header">
+              <h2>Settings</h2>
+            </div>
+            <div class="settings-form">
+              <div class="setting-group">
+                <label>Theme</label>
+                <select id="setting-theme">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </div>
+              <div class="setting-group">
+                <label>Shell</label>
+                <input type="text" id="setting-shell" placeholder="/bin/bash">
+              </div>
+              <div class="setting-group">
+                <label>Font Size</label>
+                <input type="number" id="setting-fontsize" value="14" min="10" max="24">
+              </div>
+              <div class="setting-group">
+                <label>Notifications</label>
+                <div class="checkbox-group">
+                  <label><input type="checkbox" id="notif-build"> Build Complete</label>
+                  <label><input type="checkbox" id="notif-test"> Test Complete</label>
+                  <label><input type="checkbox" id="notif-error"> Critical Errors</label>
+                  <label><input type="checkbox" id="notif-agent"> Agent Tasks</label>
+                </div>
+              </div>
+              <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal for creating/editing agents -->
+  <div id="modal-agent" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-agent-title">New Agent</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-agent">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" name="name" required>
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <input type="text" name="role" placeholder="e.g., code-assistant">
+          </div>
+          <div class="form-group">
+            <label>Instructions</label>
+            <textarea name="instructions" rows="4"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Model</label>
+            <input type="text" name="model" placeholder="default">
+          </div>
+          <div class="form-group">
+            <label>Context Directory</label>
+            <input type="text" name="contextDir" placeholder="./src">
+          </div>
+          <div class="form-group">
+            <label>Tools (comma-separated)</label>
+            <input type="text" name="tools" placeholder="read-files, write-files">
+          </div>
+          <div class="form-group">
+            <label>Commands (comma-separated)</label>
+            <input type="text" name="commands" placeholder="npm run dev, npm test">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-cancel">Cancel</button>
+        <button class="btn btn-primary modal-save">Save Agent</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
