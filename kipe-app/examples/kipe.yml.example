@@ -1,0 +1,111 @@
+# Kipe Configuration File
+# Documentação: https://github.com/kipe-app/kipe/blob/main/README.md
+
+# Identificação do Projeto
+project: my-awesome-project
+path: /Users/developer/projects/my-awesome-project
+
+# Stack detectada automaticamente
+stack:
+  - nodejs
+  - typescript
+  - react
+  - pnpm
+
+# Variáveis de Ambiente
+env:
+  NODE_ENV: development
+  PORT: "3000"
+  API_URL: http://localhost:3001
+  DEBUG: kipe:*
+
+# Agentes de IA
+agents:
+  # Agente principal de código
+  - id: agent-code-001
+    name: Code Agent
+    role: code-assistant
+    instructions: |
+      Você é um assistente de código especializado em React e TypeScript.
+      Ajude com code review, refactoring, e melhores práticas.
+    model: gpt-4
+    contextDir: ./src
+    tools:
+      - read-files
+      - write-files
+      - search-code
+    commands:
+      - pnpm run lint
+      - pnpm run format
+    permissions:
+      - read
+      - write
+    provider: openai
+    status: idle
+
+  # Agente de testes
+  - id: agent-test-001
+    name: Test Agent
+    role: test-runner
+    instructions: |
+      Execute testes, analise coverage e sugira melhorias.
+    model: gpt-4
+    contextDir: ./src
+    tools:
+      - read-files
+      - run-commands
+    commands:
+      - pnpm test
+      - pnpm run test:coverage
+    permissions:
+      - read
+      - execute
+    provider: openai
+    status: idle
+
+# Processos
+processes:
+  # Servidor de desenvolvimento
+  - id: proc-dev-server
+    name: Dev Server
+    command: pnpm run dev
+    cwd: /Users/developer/projects/my-awesome-project
+    autoStart: true
+    autoRestart: true
+    restartPolicy: on-failure
+    maxRestarts: 3
+
+# Notificações
+notifications:
+  enabled: true
+  events:
+    - error
+    - complete
+  desktop: true
+  sound: false
+
+# Orquestração
+orchestration:
+  mode: parallel
+  maxConcurrent: 5
+  timeout: 30000
+
+# Permissões
+permissions:
+  allowFileSystemAccess: true
+  allowNetworkAccess: true
+  allowShellCommands: true
+
+# Provedores de IA
+providers:
+  - name: openai
+    type: openai
+    apiKey: ${OPENAI_API_KEY}
+    model: gpt-4
+
+# Hooks
+hooks:
+  onProjectOpen:
+    - echo "Projeto aberto no Kipe!"
+  onSwarmStart:
+    - echo "Iniciando Kipe Swarm..."
