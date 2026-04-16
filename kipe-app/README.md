@@ -1,67 +1,54 @@
-# Kipe - AI-Assisted Development Workspace
+# Kipe - AI Development Workspace
 
-**Kipe** é um workspace desktop moderno para desenvolvimento assistido por IA, onde agentes, terminais, processos e ferramentas de desenvolvimento coexistem em uma única interface.
+**Kipe** é um workspace desktop moderno para desenvolvimento assistido por IA, onde agentes, terminais, processos e ferramentas coexistem em uma única interface.
 
-## 🚀 Visão Geral
+## 🎨 Design
 
-Kipe foi construído para desenvolvedores avançados que precisam de:
+Tema premium dark com acentos em amarelo ouro:
+- **Cores principais**: Preto profundo (#0a0a0a, #121212) com amarelo (#ffd000)
+- **Estética**: Minimalista, técnica e profissional
+- **Foco**: Densidade de informação útil com elegância
 
-- **Workspace unificado** para gerenciar múltiplos projetos
-- **Agentes de IA especializados** para diferentes tarefas
-- **Terminal real com PTY** para execução de comandos
-- **Process manager integrado** para servidores e watchers
-- **Configuração declarativa** via `kipe.yml`
-- **Observabilidade completa** com logs e activity feed
-- **Notificações desktop** para eventos importantes
+## ✨ Funcionalidades
 
-## ✨ Funcionalidades Principais
-
-### 1. Gerenciamento de Projetos
+### Gerenciamento de Projetos
 - Lista de projetos recentes
 - Detecção automática de stack (Node.js, Python, Rust, Go, etc.)
-- Configuração persistida localmente
+- Persistência local de configurações
 
-### 2. Workspace Unificado
-- Painéis redimensionáveis
-- Sistema de tabs por painel
-- Layout salvo por projeto
-- Navegação rápida via sidebar
+### Kipe Agents
+- Criação de agentes de IA especializados
+- Modelos suportados: GPT-4, GPT-3.5, Claude 3, Llama 3
+- Status em tempo real (idle, busy)
+- Configuração via YAML
 
-### 3. Terminal Real
-- Suporte PTY completo (via node-pty)
-- Múltiplas sessões simultâneas
-- Cores ANSI e atalhos comuns
-- Shell configurável por projeto
+### Process Manager
+- Monitoramento de processos
+- Status, PID, CPU, memória e uptime
+- Controles de start/stop
 
-### 4. Agentes de IA
-- Criação de agentes especializados
-- Configuração de papel, instruções e ferramentas
-- Coordenação entre agentes via message bus
-- Subagentes e delegação de tarefas
-
-### 5. Process Manager
-- Lista de processos com status em tempo real
-- Controles de iniciar/parar/reiniciar
-- Auto-restart configurável
-- Monitoramento de CPU e memória
-
-### 6. Configuração YAML
-- Arquivo `kipe.yml` declarativo
+### Configuração Declarativa
+- Arquivo `kipe.yml` por projeto
 - Editor visual integrado
-- Sincronização bidirecional
-- Validação de schema
+- Sintaxe YAML com validação
 
-### 7. Kipe Swarm
-- Modo que inicia todos os agentes e processos
+### Activity Feed
+- Timeline de eventos do workspace
+- Notificações de ações de agentes e processos
+- Filtro por tipo (success, error, warning, info)
+
+### Kipe Swarm
+- Modo que ativa todos os agentes e processos simultaneamente
 - Orquestração automática
-- Conexão ao barramento interno
-- Monitoramento global do workspace
+- Monitoramento unificado
 
-### 8. Activity Feed
-- Timeline de todos os eventos
-- Ações dos agentes
-- Eventos dos processos
-- Erros e intervenções
+## 🚀 Instalação
+
+```bash
+cd kipe-app
+npm install
+npm start
+```
 
 ## 📁 Estrutura do Projeto
 
@@ -69,208 +56,76 @@ Kipe foi construído para desenvolvedores avançados que precisam de:
 kipe-app/
 ├── src/
 │   ├── main/
-│   │   ├── main.js           # Main process do Electron
-│   │   ├── terminalManager.js # Gerenciador de terminais PTY
-│   │   ├── processManager.js  # Gerenciador de processos
-│   │   └── agentManager.js    # Gerenciador de agentes
-│   ├── renderer/
-│   │   ├── index.html         # Interface principal
-│   │   ├── renderer.js        # Lógica do frontend
-│   │   └── styles/
-│   │       └── main.css       # Design system e estilos
-│   └── shared/
-│       └── schemas.js         # Schemas e validações
+│   │   ├── main.js          # Main process Electron
+│   │   └── preload.js       # Preload script (contextBridge)
+│   └── renderer/
+│       ├── index.html       # UI principal
+│       ├── renderer.js      # Lógica do frontend
+│       └── styles/
+│           └── main.css     # Design system completo
+├── examples/
+│   └── kipe.yml.example     # Exemplo de configuração
 ├── package.json
 └── README.md
 ```
 
-## 🛠️ Stack Tecnológica
+## 🛠️ Tecnologias
 
 - **Electron** - Framework desktop
-- **Node.js** - Backend e main process
-- **node-pty** - Terminal com PTY real
-- **js-yaml** - Parser e writer de YAML
-- **electron-store** - Armazenamento local
-- **chokidar** - Watcher de arquivos
-- **uuid** - Geração de IDs únicos
+- **Node.js** - Backend e IPC
+- **HTML/CSS/JS** - Frontend vanilla
+- **js-yaml** - Parser YAML
+- **node-pty** - Terminal PTY (futuro)
 
-## 🚀 Instalação e Execução
+## ⌨️ Atalhos
 
-### Pré-requisitos
+- `Esc` - Fechar modais
+- `Ctrl/Cmd + K` - Command palette (futuro)
 
-- Node.js 18+ instalado
-- npm ou yarn
-- Git
-
-### Instalação
-
-```bash
-# Clone o repositório
-cd /workspace/kipe-app
-
-# Instale as dependências
-npm install
-
-# Execute em modo desenvolvimento
-npm start
-```
-
-### Build para Produção
-
-```bash
-# Build da aplicação
-npm run build
-```
-
-## 📄 Schema do kipe.yml
-
-O arquivo de configuração `kipe.yml` suporta a seguinte estrutura:
+## 📝 Exemplo de kipe.yml
 
 ```yaml
-# Identificação do projeto
-project: nome-do-projeto
-path: /caminho/para/projeto
+project:
+  name: my-awesome-project
+  path: .
 
-# Stack detectada
-stack:
-  - nodejs
-  - typescript
-  - react
-
-# Variáveis de ambiente
-env:
-  NODE_ENV: development
-  API_URL: http://localhost:3000
-
-# Agentes de IA
 agents:
-  - id: uuid-gerado
-    name: Code Agent
-    role: code-assistant
-    instructions: "Ajude com code review e refactoring"
-    model: default
-    contextDir: ./src
-    tools:
-      - read-files
-      - write-files
-      - search-code
+  - name: Code Reviewer
+    role: Reviews code changes
+    model: gpt-4
+    instructions: |
+      You are an expert code reviewer.
+      Focus on quality and best practices.
+
+  - name: Test Runner
+    role: Runs tests
+    model: gpt-3.5-turbo
     commands:
-      - npm run dev
       - npm test
-    permissions:
-      - read
-      - write
-    status: idle
 
-# Processos
 processes:
-  - id: uuid-gerado
-    name: Dev Server
+  - name: Dev Server
     command: npm run dev
-    autoStart: false
-    restartPolicy: on-failure
-    cwd: /caminho/para/projeto
+    autoRestart: true
 
-# Watchers
-watchers: []
-
-# Notificações
 notifications:
   enabled: true
   events:
-    - error
-    - complete
-
-# Orquestração
-orchestration:
-  mode: parallel
-  maxConcurrent: 5
-
-# Política de restart
-restartPolicy: on-failure
-
-# Permissões
-permissions:
-  allowFileSystemAccess: true
-  allowNetworkAccess: true
-  allowShellCommands: true
-
-# Provedores de IA
-providers:
-  - name: default
-    type: openai
-    apiKey: ${OPENAI_API_KEY}
-
-# Hooks
-hooks:
-  onProjectOpen: []
-  onSwarmStart: []
-  onProcessExit: []
+    - build.complete
+    - test.failure
 ```
 
-## 🎨 Design System
+## 🔒 Segurança
 
-Kipe utiliza um design system premium com:
+- Context isolation habilitado
+- nodeIntegration desabilitado
+- IPC seguro via contextBridge
+- Sem acesso direto ao filesystem pelo renderer
 
-- **Dark mode predominante** - Estética técnica e profissional
-- **Cores semânticas** - Verde (sucesso), Amarelo (atenção), Vermelho (erro), Azul (info)
-- **Tipografia limpa** - Fontes do sistema com fallbacks adequados
-- **Componentes minimalistas** - Cards, badges, botões discretos
-- **Animações sutis** - Transições rápidas e discretas
+## 📄 Licença
 
-## 🔌 IPC Handlers
-
-A comunicação entre main e renderer processes é feita via IPC:
-
-| Handler | Descrição |
-|---------|-----------|
-| `get-projects` | Retorna lista de projetos |
-| `add-project` | Adiciona novo projeto |
-| `open-project` | Abre projeto existente |
-| `remove-project` | Remove projeto da lista |
-| `save-kipe-yml` | Salva configuração YAML |
-| `get-settings` | Retorna configurações |
-| `save-settings` | Salva configurações |
-| `get-activity-log` | Retorna log de atividades |
-| `clear-activity-log` | Limpa log de atividades |
-
-## 📋 Roadmap
-
-### MVP (Atual)
-- [x] Abertura de projetos locais
-- [x] Interface desktop moderna
-- [x] Sistema de navegação
-- [x] Editor de configuração YAML
-- [x] Cadastro de agentes
-- [x] Cadastro de processos
-- [x] Activity feed
-- [x] Notificações toast
-- [ ] Terminal PTY fully functional
-- [ ] Process manager com stats reais
-- [ ] Integração com provedores de IA
-
-### Pós-MVP
-- [ ] Coordenação avançada entre agentes
-- [ ] Subagentes e hierarquia
-- [ ] Leitura cruzada de output
-- [ ] Timeline detalhada
-- [ ] Automações reativas
-- [ ] Marketplace de templates
-- [ ] Integração MCP
-- [ ] Command palette
-- [ ] Atalhos de teclado globais
-
-## ⚠️ Restrições
-
-- **NÃO usa Docker** - Tudo roda nativamente no SO
-- **NÃO requer containers** - Processos nativos do sistema
-- **Local-first** - Funciona offline (exceto chamadas a IA)
-- **Cross-platform** - Windows, macOS, Linux
-
-## 📝 Licença
-
-MIT License - ver arquivo LICENSE para detalhes.
+MIT
 
 ---
 
-**Kipe** - AI-Assisted Development Workspace. Construído para desenvolvedores que buscam produtividade real.
+**Kipe** - AI-Assisted Development Workspace

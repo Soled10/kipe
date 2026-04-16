@@ -1,111 +1,257 @@
-# Kipe Configuration File
-# Documentação: https://github.com/kipe-app/kipe/blob/main/README.md
+# Kipe Configuration File (kipe.yml)
+# Complete example with all available options
 
-# Identificação do Projeto
-project: my-awesome-project
-path: /Users/developer/projects/my-awesome-project
+project:
+  name: my-awesome-project
+  path: .
+  description: An amazing project powered by Kipe
 
-# Stack detectada automaticamente
+# Stack detection is automatic, but you can override
 stack:
-  - nodejs
-  - typescript
-  - react
-  - pnpm
+  type: JavaScript/Node.js
+  version: 18.x
 
-# Variáveis de Ambiente
+# Environment variables for all processes
 env:
   NODE_ENV: development
-  PORT: "3000"
-  API_URL: http://localhost:3001
+  API_URL: http://localhost:3000
   DEBUG: kipe:*
 
-# Agentes de IA
+# AI Agents Configuration
 agents:
-  # Agente principal de código
-  - id: agent-code-001
-    name: Code Agent
-    role: code-assistant
-    instructions: |
-      Você é um assistente de código especializado em React e TypeScript.
-      Ajude com code review, refactoring, e melhores práticas.
+  - name: Code Reviewer
+    role: Reviews code changes and suggests improvements
     model: gpt-4
-    contextDir: ./src
-    tools:
-      - read-files
-      - write-files
-      - search-code
+    temperature: 0.7
+    maxTokens: 4096
+    instructions: |
+      You are an expert code reviewer with deep knowledge of best practices.
+      Focus on:
+      - Code quality and readability
+      - Performance optimizations
+      - Security vulnerabilities
+      - Test coverage
     commands:
-      - pnpm run lint
-      - pnpm run format
+      - npm run lint
+      - npm run typecheck
     permissions:
-      - read
-      - write
-    provider: openai
+      - read:files
+      - write:suggestions
+    triggers:
+      - file.changed
+      - pr.opened
     status: idle
 
-  # Agente de testes
-  - id: agent-test-001
-    name: Test Agent
-    role: test-runner
+  - name: Test Runner
+    role: Runs tests and reports failures
+    model: gpt-3.5-turbo
     instructions: |
-      Execute testes, analise coverage e sugira melhorias.
-    model: gpt-4
-    contextDir: ./src
-    tools:
-      - read-files
-      - run-commands
+      Execute tests and provide clear summaries of failures.
+      Suggest fixes when tests fail.
     commands:
-      - pnpm test
-      - pnpm run test:coverage
+      - npm test
+      - npm run test:coverage
     permissions:
-      - read
-      - execute
-    provider: openai
+      - execute:commands
+      - read:output
+    autoRun: true
     status: idle
 
-# Processos
+  - name: Documentation Generator
+    role: Generates and updates documentation
+    model: claude-3
+    instructions: |
+      Keep documentation up to date with code changes.
+      Generate README, API docs, and inline comments.
+    permissions:
+      - read:files
+      - write:files
+    watch:
+      - src/**/*.js
+      - src/**/*.ts
+    status: idle
+
+# Process Management
 processes:
-  # Servidor de desenvolvimento
-  - id: proc-dev-server
-    name: Dev Server
-    command: pnpm run dev
-    cwd: /Users/developer/projects/my-awesome-project
-    autoStart: true
+  - name: Dev Server
+    command: npm run dev
+    cwd: .
     autoRestart: true
-    restartPolicy: on-failure
-    maxRestarts: 3
+    restartDelay: 2000
+    maxRestarts: 5
+    watch:
+      - src/
+    env:
+      PORT: 3000
+    status: stopped
+    pid: null
 
-# Notificações
+  - name: Build Watcher
+    command: npm run build:watch
+    cwd: .
+    autoRestart: false
+    status: stopped
+
+  - name: Database
+    command: docker-compose up postgres
+    cwd: ./infra
+    autoRestart: true
+    status: stopped
+
+# Watchers - Auto-trigger actions on file changes
+watchers:
+  - name: TypeScript Compiler
+    watch:
+      - src/**/*.ts
+    ignore:
+      - node_modules
+      - dist
+    command: tsc --noEmit
+    debounce: 500
+
+  - name: ESLint
+    watch:
+      - src/**/*.{js,jsx,ts,tsx}
+    command: npm run lint
+    debounce: 1000
+
+# Notifications Configuration
 notifications:
   enabled: true
-  events:
-    - error
-    - complete
   desktop: true
   sound: false
+  events:
+    - type: build.complete
+      enabled: true
+      priority: low
+    - type: build.failure
+      enabled: true
+      priority: high
+    - type: test.complete
+      enabled: true
+      priority: low
+    - type: test.failure
+      enabled: true
+      priority: high
+    - type: agent.complete
+      enabled: true
+      priority: low
+    - type: agent.error
+      enabled: true
+      priority: high
+    - type: process.crash
+      enabled: true
+      priority: critical
 
-# Orquestração
+# Orchestration Rules
 orchestration:
-  mode: parallel
-  maxConcurrent: 5
-  timeout: 30000
+  # Start processes in order
+  startupOrder:
+    - Database
+    - Dev Server
+    - Build Watcher
+  
+  # Dependencies between processes
+  dependencies:
+    Dev Server:
+      - Database
+  
+  # Health checks
+  healthChecks:
+    - name: API Health
+      process: Dev Server
+      endpoint: http://localhost:3000/health
+      interval: 30000
+      timeout: 5000
 
-# Permissões
+# Restart Policies
+restartPolicy:
+  default: on-failure
+  maxRestarts: 3
+  restartWindow: 60000  # 1 minute
+  exceptions:
+    - process: Dev Server
+      policy: always
+    - process: Build Watcher
+      policy: never
+
+# Permissions & Security
 permissions:
-  allowFileSystemAccess: true
-  allowNetworkAccess: true
-  allowShellCommands: true
+  allowedCommands:
+    - npm:*
+    - node:*
+    - git:*
+    - yarn:*
+    - pnpm:*
+  blockedCommands:
+    - rm -rf /
+    - sudo:*
+    - chmod -R 777
+  fileAccess:
+    allowed:
+      - src/**
+      - public/**
+      - tests/**
+    denied:
+      - .env*
+      - **/*.key
+      - node_modules/**
 
-# Provedores de IA
+# AI Providers Configuration
 providers:
-  - name: openai
-    type: openai
+  openai:
     apiKey: ${OPENAI_API_KEY}
-    model: gpt-4
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4
+      - gpt-3.5-turbo
+  
+  anthropic:
+    apiKey: ${ANTHROPIC_API_KEY}
+    baseUrl: https://api.anthropic.com
+    models:
+      - claude-3-opus
+      - claude-3-sonnet
+  
+  local:
+    baseUrl: http://localhost:11434
+    models:
+      - llama-3
+      - mistral
 
-# Hooks
+# Hooks - Custom scripts at lifecycle events
 hooks:
   onProjectOpen:
-    - echo "Projeto aberto no Kipe!"
+    - echo "Welcome to Kipe!"
+  
   onSwarmStart:
-    - echo "Iniciando Kipe Swarm..."
+    - npm run prepare
+  
+  onProcessCrash:
+    - scripts/notify-crash.sh {{processName}}
+  
+  onAgentComplete:
+    - scripts/log-agent-result.sh {{agentName}}
+  
+  beforeExit:
+    - scripts/cleanup.sh
+
+# UI Preferences (per project)
+ui:
+  layout:
+    sidebar: true
+    activityPanel: true
+    terminalHeight: 300
+  theme: dark
+  fontSize: 14
+  fontFamily: 'SF Mono, Fira Code, monospace'
+
+# Metrics & Monitoring
+monitoring:
+  enabled: true
+  metrics:
+    - cpu
+    - memory
+    - disk
+  interval: 5000
+  retention: 86400  # 24 hours

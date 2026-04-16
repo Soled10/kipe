@@ -1,573 +1,634 @@
-/**
- * Kipe - Renderer Process (Frontend Logic)
- */
-
-const { ipcRenderer, remote } = require('electron');
-const yaml = require('js-yaml');
+// ============================================
+// KIPE - Renderer Process
+// ============================================
 
 // State
 let currentProject = null;
-let currentView = 'workspace';
-let terminalSessions = [];
+let currentView = 'overview';
 let agents = [];
 let processes = [];
 let activityEvents = [];
-let settings = {};
+let settings = {
+  shell: '/bin/bash',
+  theme: 'dark',
+  notifications: true
+};
 
 // DOM Elements
 const welcomeScreen = document.getElementById('welcome-screen');
 const workspaceScreen = document.getElementById('workspace-screen');
 const projectsList = document.getElementById('projects-list');
+const noProjects = document.getElementById('no-projects');
 const navItems = document.querySelectorAll('.nav-item[data-view]');
 const views = document.querySelectorAll('.view');
 const projectNameEl = document.getElementById('project-name');
 const projectPathEl = document.getElementById('project-path');
 const agentsListEl = document.getElementById('agents-list');
-const processesTableEl = document.getElementById('processes-table');
+const noAgents = document.getElementById('no-agents');
+const processesTableBody = document.getElementById('processes-table-body');
+const noProcesses = document.getElementById('no-processes');
 const activityFeedEl = document.getElementById('activity-feed');
+const noActivity = document.getElementById('no-activity');
 const configYamlEl = document.getElementById('config-yaml');
 const modalAgent = document.getElementById('modal-agent');
 const formAgent = document.getElementById('form-agent');
 const toastContainer = document.getElementById('toast-container');
 
-// Initialize
-document.addEventListener('DOMContentLoaded', async () => {
+// ============================================
+// Initialization
+// ============================================
+
+async function init() {
   await loadSettings();
   await loadProjects();
   setupEventListeners();
-  showToast('info', 'Welcome to Kipe!');
-});
-
-// Load Settings
-async function loadSettings() {
-  try {
-    settings = await ipcRenderer.invoke('get-settings');
-    applySettings();
-  } catch (error) {
-    console.error('Error loading settings:', error);
-  }
 }
 
-// Apply Settings
-function applySettings() {
-  if (settings.theme === 'light') {
-    document.body.classList.add('light-theme');
-  }
-}
+// ============================================
+// Project Management
+// ============================================
 
-// Load Projects
 async function loadProjects() {
   try {
-    const projects = await ipcRenderer.invoke('get-projects');
-    renderProjectsList(projects);
-  } catch (error) {
-    console.error('Error loading projects:', error);
+    const projects = await window.kipeAPI.getProjects();
+    renderProjects(projects);
+  } catch (err) {
+    showToast('Failed to load projects', 'error');
   }
 }
 
-// Render Projects List
-function renderProjectsList(projects) {
-  if (!projects || projects.length === 0) {
-    projectsList.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📁</div>
-        <h3>No recent projects</h3>
-        <p>Open a project folder to get started</p>
-      </div>
-    `;
-    return;
-  }
-
-  projectsList.innerHTML = projects.map(project => `
-    <div class="project-item" data-project-id="${project.id}" data-project-path="${project.path}">
-      <div>
-        <div class="project-name">${escapeHtml(project.name)}</div>
-        <div class="project-path">${escapeHtml(project.path)}</div>
-      </div>
-      <div class="project-stack">
-        ${project.stack ? project.stack.slice(0, 3).map(s => `<span class="badge">${escapeHtml(s)}</span>`).join('') : ''}
-      </div>
-    </div>
-  `).join('');
-
-  // Add click handlers
-  document.querySelectorAll('.project-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const projectId = item.dataset.projectId;
-      const projectPath = item.dataset.projectPath;
-      await openProject(projectId || projectPath);
-    });
-  });
-}
-
-// Open Project
-async function openProject(projectIdOrPath) {
-  try {
-    currentProject = await ipcRenderer.invoke('open-project', projectIdOrPath);
+function renderProjects(projects) {
+  if (projects.length === 0) {
+    projectsList.style.display = 'none';
+    noProjects.style.display = 'flex';
+  } else {
+    projectsList.style.display = 'grid';
+    noProjects.style.display = 'none';
     
-    if (currentProject) {
-      showWorkspace();
-      updateProjectHeader();
-      await loadActivityLog();
-      await loadConfig();
-      showToast('success', `Opened project: ${currentProject.name}`);
-    }
-  } catch (error) {
-    showToast('error', `Failed to open project: ${error.message}`);
-  }
-}
-
-// Show Workspace
-function showWorkspace() {
-  welcomeScreen.classList.remove('active');
-  workspaceScreen.classList.add('active');
-}
-
-// Update Project Header
-function updateProjectHeader() {
-  if (currentProject) {
-    projectNameEl.textContent = currentProject.name;
-    projectPathEl.textContent = currentProject.path;
-  }
-}
-
-// Setup Event Listeners
-function setupEventListeners() {
-  // Navigation
-  navItems.forEach(item => {
-    item.addEventListener('click', () => {
-      const view = item.dataset.view;
-      switchView(view);
-    });
-  });
-
-  // Open Project Button
-  document.getElementById('btn-open-project').addEventListener('click', async () => {
-    try {
-      const result = await remote.dialog.showOpenDialog({
-        properties: ['openDirectory']
-      });
-      
-      if (!result.canceled && result.filePaths.length > 0) {
-        const projectPath = result.filePaths[0];
-        const project = await ipcRenderer.invoke('add-project', projectPath);
+    projectsList.innerHTML = projects.map(project => `
+      <div class="project-card" data-project-id="${project.id}">
+        <h3>${escapeHtml(project.name)}</h3>
+        <div class="path">${escapeHtml(project.path)}</div>
+        <span class="stack">${escapeHtml(project.stack[0])}</span>
+      </div>
+    `).join('');
+    
+    // Add click handlers
+    document.querySelectorAll('.project-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const projectId = card.dataset.projectId;
+        const project = projects.find(p => p.id === projectId);
         if (project) {
-          await loadProjects();
-          await openProject(project.id);
+          openProject(project);
         }
-      }
-    } catch (error) {
-      showToast('error', `Failed to open project: ${error.message}`);
-    }
-  });
-
-  // Back to Home
-  document.getElementById('btn-back-home').addEventListener('click', () => {
-    currentProject = null;
-    workspaceScreen.classList.remove('active');
-    welcomeScreen.classList.add('active');
-    loadProjects();
-  });
-
-  // New Terminal
-  document.getElementById('btn-new-terminal').addEventListener('click', () => {
-    createTerminal();
-  });
-
-  // Kipe Swarm
-  document.getElementById('btn-swarm').addEventListener('click', () => {
-    startSwarmMode();
-  });
-
-  // New Agent
-  document.getElementById('btn-new-agent').addEventListener('click', () => {
-    showAgentModal();
-  });
-
-  // Save Config
-  document.getElementById('btn-save-config').addEventListener('click', async () => {
-    await saveConfig();
-  });
-
-  // Clear Activity
-  document.getElementById('btn-clear-activity').addEventListener('click', async () => {
-    await ipcRenderer.invoke('clear-activity-log');
-    activityEvents = [];
-    renderActivityFeed();
-    showToast('info', 'Activity log cleared');
-  });
-
-  // Save Settings
-  document.getElementById('btn-save-settings').addEventListener('click', async () => {
-    await saveSettings();
-  });
-
-  // Modal Close
-  document.querySelector('.modal-close').addEventListener('click', hideAgentModal);
-  document.querySelector('.modal-cancel').addEventListener('click', hideAgentModal);
-  
-  // Modal Save
-  document.querySelector('.modal-save').addEventListener('click', saveAgent);
-
-  // Action Cards
-  document.querySelectorAll('.action-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const action = card.dataset.action;
-      handleQuickAction(action);
+      });
     });
-  });
-
-  // Listen for activity events from main process
-  ipcRenderer.on('activity-event', (event, activityEvent) => {
-    activityEvents.unshift(activityEvent);
-    renderActivityFeed();
-  });
+  }
 }
 
-// Switch View
+async function openProjectDialog() {
+  try {
+    const projectPath = await window.kipeAPI.showOpenDirectoryDialog();
+    if (projectPath) {
+      const project = await window.kipeAPI.addProject(projectPath);
+      showToast(`Project "${project.name}" opened`, 'success');
+      await loadProjects();
+      openProject(project);
+    }
+  } catch (err) {
+    showToast('Failed to open project: ' + err.message, 'error');
+  }
+}
+
+function openProject(project) {
+  currentProject = project;
+  
+  // Update UI
+  projectNameEl.textContent = project.name;
+  projectPathEl.textContent = project.path;
+  
+  // Show workspace
+  welcomeScreen.style.display = 'none';
+  workspaceScreen.style.display = 'flex';
+  
+  // Load project data
+  loadProjectConfig();
+  updateStats();
+  
+  // Add activity event
+  addActivityEvent('info', 'Project Opened', `Opened project ${project.name}`);
+  
+  showToast(`Welcome to ${project.name}`, 'success');
+}
+
+async function closeProject() {
+  currentProject = null;
+  workspaceScreen.style.display = 'none';
+  welcomeScreen.style.display = 'flex';
+  await loadProjects();
+}
+
+// ============================================
+// Navigation
+// ============================================
+
 function switchView(viewName) {
   currentView = viewName;
   
+  // Update nav items
   navItems.forEach(item => {
     item.classList.toggle('active', item.dataset.view === viewName);
   });
   
+  // Update views
   views.forEach(view => {
     view.classList.toggle('active', view.id === `view-${viewName}`);
   });
 }
 
-// Create Terminal
-function createTerminal() {
-  const terminalContainer = document.getElementById('terminal-container');
-  const sessionId = `term-${Date.now()}`;
-  
-  const termEl = document.createElement('div');
-  termEl.className = 'terminal-session';
-  termEl.id = sessionId;
-  termEl.innerHTML = `
-    <div class="terminal-header">
-      <span class="terminal-title">Terminal ${terminalSessions.length + 1}</span>
-      <button class="terminal-close" data-session="${sessionId}">&times;</button>
-    </div>
-    <div class="terminal-body">
-      <pre>$ Ready to execute commands...</pre>
-    </div>
-  `;
-  
-  terminalContainer.appendChild(termEl);
-  terminalSessions.push({ id: sessionId, name: `Terminal ${terminalSessions.length + 1}` });
-  
-  showToast('info', 'Terminal created (PTY integration pending native module)');
+// ============================================
+// Settings
+// ============================================
+
+async function loadSettings() {
+  try {
+    settings = await window.kipeAPI.getSettings();
+    document.getElementById('setting-shell').value = settings.shell;
+    document.getElementById('setting-theme').value = settings.theme;
+    document.getElementById('setting-notifications').checked = settings.notifications;
+  } catch (err) {
+    console.error('Failed to load settings:', err);
+  }
 }
 
-// Start Swarm Mode
-function startSwarmMode() {
-  if (!currentProject) return;
-  
-  showToast('info', 'Starting Kipe Swarm mode...');
-  
-  // Simulate starting all agents and processes
-  addActivityEvent({
-    type: 'info',
-    message: 'Kipe Swarm started',
-    details: `Initializing all agents and processes for ${currentProject.name}`
-  });
-  
-  // In production, this would actually start all configured agents and processes
-  setTimeout(() => {
-    showToast('success', 'Kipe Swarm active! All agents initialized.');
-  }, 1500);
+async function saveSettings() {
+  try {
+    settings.shell = document.getElementById('setting-shell').value;
+    settings.theme = document.getElementById('setting-theme').value;
+    settings.notifications = document.getElementById('setting-notifications').checked;
+    
+    await window.kipeAPI.saveSettings(settings);
+    showToast('Settings saved', 'success');
+  } catch (err) {
+    showToast('Failed to save settings', 'error');
+  }
 }
 
-// Agent Modal
-function showAgentModal(agent = null) {
-  document.getElementById('modal-agent-title').textContent = agent ? 'Edit Agent' : 'New Agent';
-  
-  if (agent) {
-    formAgent.name.value = agent.name;
-    formAgent.role.value = agent.role;
-    formAgent.instructions.value = agent.instructions;
-    formAgent.model.value = agent.model;
-    formAgent.contextDir.value = agent.contextDir;
-    formAgent.tools.value = agent.tools.join(', ');
-    formAgent.commands.value = agent.commands.join(', ');
+// ============================================
+// Agents
+// ============================================
+
+function renderAgents() {
+  if (agents.length === 0) {
+    agentsListEl.style.display = 'none';
+    noAgents.style.display = 'flex';
   } else {
-    formAgent.reset();
+    agentsListEl.style.display = 'grid';
+    noAgents.style.display = 'none';
+    
+    agentsListEl.innerHTML = agents.map(agent => `
+      <div class="agent-card">
+        <div class="agent-header">
+          <span class="agent-name">${escapeHtml(agent.name)}</span>
+          <span class="agent-status ${agent.status}">${agent.status}</span>
+        </div>
+        <div class="agent-role">${escapeHtml(agent.role)}</div>
+        <span class="agent-model">${escapeHtml(agent.model)}</span>
+      </div>
+    `).join('');
   }
   
+  updateStats();
+}
+
+function showNewAgentModal() {
   modalAgent.classList.add('active');
 }
 
-function hideAgentModal() {
+function hideNewAgentModal() {
   modalAgent.classList.remove('active');
+  formAgent.reset();
 }
 
-async function saveAgent() {
-  const formData = new FormData(formAgent);
-  const agentData = {
-    name: formData.get('name'),
-    role: formData.get('role'),
-    instructions: formData.get('instructions'),
-    model: formData.get('model') || 'default',
-    contextDir: formData.get('contextDir') || './',
-    tools: formData.get('tools').split(',').map(t => t.trim()).filter(Boolean),
-    commands: formData.get('commands').split(',').map(c => c.trim()).filter(Boolean),
-    permissions: ['read', 'write'],
-    status: 'idle'
+async function createAgent(data) {
+  const agent = {
+    id: Date.now().toString(),
+    name: data.name,
+    role: data.role,
+    instructions: data.instructions,
+    model: data.model,
+    status: 'idle',
+    createdAt: new Date().toISOString()
   };
   
-  if (currentProject && currentProject.config) {
-    if (!currentProject.config.agents) {
-      currentProject.config.agents = [];
-    }
-    currentProject.config.agents.push(agentData);
-    
-    await saveConfig();
-    await loadAgents();
-    showToast('success', 'Agent created successfully');
-  }
-  
-  hideAgentModal();
-}
-
-// Load Agents
-async function loadAgents() {
-  if (!currentProject || !currentProject.config) return;
-  
-  agents = currentProject.config.agents || [];
+  agents.push(agent);
   renderAgents();
+  addActivityEvent('success', 'Agent Created', `Created agent "${agent.name}"`);
+  showToast(`Agent "${agent.name}" created`, 'success');
 }
 
-// Render Agents
-function renderAgents() {
-  if (!agents || agents.length === 0) {
-    agentsListEl.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🤖</div>
-        <h3>No agents configured</h3>
-        <p>Create your first AI agent for this project</p>
-      </div>
-    `;
-    return;
-  }
-  
-  agentsListEl.innerHTML = agents.map(agent => `
-    <div class="agent-card">
-      <div class="agent-header">
-        <span class="agent-name">${escapeHtml(agent.name)}</span>
-        <span class="agent-status ${agent.status || 'idle'}">${agent.status || 'idle'}</span>
-      </div>
-      <div class="agent-role">${escapeHtml(agent.role || 'general')}</div>
-      <div class="agent-instructions">${escapeHtml(agent.instructions || 'No instructions')}</div>
-      <div class="agent-meta">
-        <span>Model: ${escapeHtml(agent.model || 'default')}</span>
-        <span>Tools: ${(agent.tools || []).length}</span>
-      </div>
-    </div>
-  `).join('');
-}
+// ============================================
+// Processes
+// ============================================
 
-// Load Processes
-async function loadProcesses() {
-  if (!currentProject || !currentProject.config) return;
-  
-  processes = currentProject.config.processes || [];
-  renderProcesses();
-}
-
-// Render Processes
 function renderProcesses() {
-  if (!processes || processes.length === 0) {
-    processesTableEl.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">⚡</div>
-        <h3>No processes configured</h3>
-        <p>Add processes to manage your development servers</p>
-      </div>
-    `;
-    return;
-  }
-  
-  processesTableEl.innerHTML = processes.map(proc => `
-    <div class="process-row">
-      <div class="process-name">${escapeHtml(proc.name)}</div>
-      <div class="process-command">${escapeHtml(proc.command)}</div>
-      <div class="process-pid">-</div>
-      <div class="process-status">stopped</div>
-      <div class="process-cpu">-</div>
-      <div class="process-actions">
-        <button class="btn-icon" title="Start">▶</button>
-        <button class="btn-icon" title="Logs">📋</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-// Load Activity Log
-async function loadActivityLog() {
-  try {
-    activityEvents = await ipcRenderer.invoke('get-activity-log');
-    renderActivityFeed();
-  } catch (error) {
-    console.error('Error loading activity log:', error);
-  }
-}
-
-// Render Activity Feed
-function renderActivityFeed() {
-  if (!activityEvents || activityEvents.length === 0) {
-    activityFeedEl.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📋</div>
-        <h3>No activity yet</h3>
-        <p>Activity will appear here as you work</p>
-      </div>
-    `;
-    return;
-  }
-  
-  activityFeedEl.innerHTML = activityEvents.map(event => {
-    const date = new Date(event.timestamp);
-    const timeStr = date.toLocaleTimeString();
+  if (processes.length === 0) {
+    document.getElementById('processes-table').style.display = 'none';
+    noProcesses.style.display = 'flex';
+  } else {
+    document.getElementById('processes-table').style.display = 'table';
+    noProcesses.style.display = 'none';
     
-    return `
-      <div class="activity-item type-${event.type || 'info'}">
-        <div class="activity-timestamp">${timeStr}</div>
+    processesTableBody.innerHTML = processes.map(process => `
+      <tr>
+        <td>${escapeHtml(process.name)}</td>
+        <td><span class="status-badge ${process.status}">${process.status}</span></td>
+        <td>${process.pid || '-'}</td>
+        <td>${process.cpu || '0%'}</td>
+        <td>${process.memory || '0 MB'}</td>
+        <td>${formatUptime(process.uptime)}</td>
+        <td>
+          <button class="btn btn-secondary" onclick="toggleProcess('${process.id}')">
+            ${process.status === 'running' ? 'Stop' : 'Start'}
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+  
+  updateStats();
+}
+
+function formatUptime(seconds) {
+  if (!seconds) return '-';
+  const mins = Math.floor(seconds / 60);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) {
+    return `${hrs}h ${mins % 60}m`;
+  }
+  return `${mins}m ${seconds % 60}s`;
+}
+
+async function createProcess(data) {
+  const process = {
+    id: Date.now().toString(),
+    name: data.name,
+    command: data.command,
+    status: 'pending',
+    pid: null,
+    cpu: '0%',
+    memory: '0 MB',
+    uptime: 0,
+    createdAt: new Date().toISOString()
+  };
+  
+  processes.push(process);
+  renderProcesses();
+  addActivityEvent('info', 'Process Created', `Created process "${process.name}"`);
+  showToast(`Process "${process.name}" created`, 'success');
+}
+
+// ============================================
+// Activity Feed
+// ============================================
+
+function addActivityEvent(type, title, description) {
+  const event = {
+    id: Date.now().toString(),
+    type,
+    title,
+    description,
+    timestamp: new Date().toISOString()
+  };
+  
+  activityEvents.unshift(event);
+  renderActivityFeed();
+  updateStats();
+}
+
+function renderActivityFeed() {
+  if (activityEvents.length === 0) {
+    activityFeedEl.style.display = 'none';
+    noActivity.style.display = 'flex';
+  } else {
+    activityFeedEl.style.display = 'flex';
+    noActivity.style.display = 'none';
+    
+    activityFeedEl.innerHTML = activityEvents.map(event => `
+      <div class="activity-item type-${event.type}">
+        <div class="activity-time">${formatTime(event.timestamp)}</div>
         <div class="activity-content">
-          <div class="activity-message">${escapeHtml(event.message)}</div>
-          ${event.details ? `<div class="activity-details">${escapeHtml(event.details)}</div>` : ''}
+          <div class="activity-title">${escapeHtml(event.title)}</div>
+          <div class="activity-description">${escapeHtml(event.description)}</div>
         </div>
       </div>
-    `;
-  }).join('');
-}
-
-// Add Activity Event
-function addActivityEvent(event) {
-  activityEvents.unshift({
-    id: `evt-${Date.now()}`,
-    timestamp: Date.now(),
-    ...event
-  });
-  renderActivityFeed();
-}
-
-// Load Config
-async function loadConfig() {
-  if (!currentProject || !currentProject.config) return;
-  
-  try {
-    const yamlContent = yaml.dump(currentProject.config, { indent: 2 });
-    configYamlEl.value = yamlContent;
-  } catch (error) {
-    console.error('Error loading config:', error);
+    `).join('');
   }
 }
 
-// Save Config
+function clearActivityFeed() {
+  activityEvents = [];
+  renderActivityFeed();
+  updateStats();
+}
+
+// ============================================
+// Config (kipe.yml)
+// ============================================
+
+async function loadProjectConfig() {
+  if (!currentProject) return;
+  
+  try {
+    const result = await window.kipeAPI.readKipeYaml(currentProject.path);
+    if (result) {
+      configYamlEl.value = result.content;
+      
+      // Parse and populate agents/processes from config
+      if (result.parsed?.agents) {
+        agents = result.parsed.agents.map((a, i) => ({
+          id: `yaml-${i}`,
+          name: a.name,
+          role: a.role || 'AI Agent',
+          model: a.model || 'gpt-4',
+          status: 'idle',
+          instructions: a.instructions || ''
+        }));
+        renderAgents();
+      }
+      
+      if (result.parsed?.processes) {
+        processes = result.parsed.processes.map((p, i) => ({
+          id: `yaml-${i}`,
+          name: p.name,
+          command: p.command,
+          status: p.status || 'stopped',
+          pid: null,
+          cpu: '0%',
+          memory: '0 MB',
+          uptime: 0
+        }));
+        renderProcesses();
+      }
+    } else {
+      configYamlEl.value = getDefaultKipeYaml();
+    }
+  } catch (err) {
+    configYamlEl.value = getDefaultKipeYaml();
+  }
+}
+
+function getDefaultKipeYaml() {
+  return `# Kipe Configuration File
+# Learn more at: kipe.dev/docs
+
+project:
+  name: ${currentProject?.name || 'my-project'}
+  path: .
+
+# AI Agents
+agents:
+  - name: Code Reviewer
+    role: Reviews code changes and suggests improvements
+    model: gpt-4
+    instructions: |
+      You are an expert code reviewer.
+      Focus on code quality, performance, and best practices.
+    
+  - name: Test Runner
+    role: Runs tests and reports failures
+    model: gpt-3.5-turbo
+    commands:
+      - npm test
+      - npm run test:coverage
+
+# Processes
+processes:
+  - name: Dev Server
+    command: npm run dev
+    autoRestart: true
+    watch:
+      - src/
+    
+  - name: Build Watcher
+    command: npm run build:watch
+    autoRestart: false
+
+# Notifications
+notifications:
+  enabled: true
+  events:
+    - build.complete
+    - test.failure
+    - agent.complete
+`;
+}
+
 async function saveConfig() {
   if (!currentProject) return;
   
   try {
-    const configContent = configYamlEl.value;
-    const config = yaml.load(configContent);
-    
-    await ipcRenderer.invoke('save-kipe-yml', currentProject.id, config);
-    currentProject.config = config;
-    
-    await loadAgents();
-    await loadProcesses();
-    
-    showToast('success', 'Configuration saved successfully');
-  } catch (error) {
-    showToast('error', `Failed to save config: ${error.message}`);
+    const content = configYamlEl.value;
+    await window.kipeAPI.writeKipeYaml(currentProject.path, content);
+    showToast('Configuration saved', 'success');
+    addActivityEvent('success', 'Config Saved', 'kipe.yml updated');
+  } catch (err) {
+    showToast('Failed to save config: ' + err.message, 'error');
   }
 }
 
-// Save Settings
-async function saveSettings() {
-  const newSettings = {
-    theme: document.getElementById('setting-theme').value,
-    shell: document.getElementById('setting-shell').value,
-    fontSize: parseInt(document.getElementById('setting-fontsize').value),
-    notifications: {
-      buildComplete: document.getElementById('notif-build').checked,
-      testComplete: document.getElementById('notif-test').checked,
-      errorCritical: document.getElementById('notif-error').checked,
-      agentTaskComplete: document.getElementById('notif-agent').checked
-    }
-  };
+// ============================================
+// Stats
+// ============================================
+
+function updateStats() {
+  document.getElementById('stat-agents').textContent = agents.filter(a => a.status !== 'stopped').length;
+  document.getElementById('stat-processes').textContent = processes.filter(p => p.status === 'running').length;
+  document.getElementById('stat-events').textContent = activityEvents.filter(e => {
+    const today = new Date().toDateString();
+    return new Date(e.timestamp).toDateString() === today;
+  }).length;
   
-  try {
-    await ipcRenderer.invoke('save-settings', newSettings);
-    settings = newSettings;
-    showToast('success', 'Settings saved');
-  } catch (error) {
-    showToast('error', `Failed to save settings: ${error.message}`);
+  if (currentProject?.stack) {
+    document.getElementById('stat-stack').textContent = currentProject.stack[0];
   }
 }
 
-// Quick Actions
-function handleQuickAction(action) {
-  switch (action) {
-    case 'new-project':
-      document.getElementById('btn-open-project').click();
-      break;
-    case 'settings':
-      if (currentProject) {
-        switchView('settings');
-      } else {
-        showToast('warning', 'Open a project first');
-      }
-      break;
-    case 'docs':
-      showToast('info', 'Documentation coming soon!');
-      break;
+// ============================================
+// Kipe Swarm
+// ============================================
+
+async function startSwarm() {
+  if (!currentProject) return;
+  
+  showToast('Starting Kipe Swarm...', 'info');
+  addActivityEvent('info', 'Kipe Swarm', 'Initializing swarm mode');
+  
+  // Simulate starting all agents and processes
+  for (const agent of agents) {
+    agent.status = 'busy';
+    addActivityEvent('info', 'Agent Started', `"${agent.name}" activated`);
   }
+  
+  for (const proc of processes) {
+    if (proc.status !== 'running') {
+      proc.status = 'running';
+      proc.pid = Math.floor(Math.random() * 10000) + 1000;
+      proc.uptime = 0;
+      addActivityEvent('success', 'Process Started', `"${proc.name}" started (PID: ${proc.pid})`);
+    }
+  }
+  
+  renderAgents();
+  renderProcesses();
+  
+  setTimeout(() => {
+    showToast('Kipe Swarm active!', 'success');
+    addActivityEvent('success', 'Kipe Swarm', 'All systems operational');
+  }, 2000);
 }
 
+// ============================================
 // Toast Notifications
-function showToast(type, message) {
+// ============================================
+
+function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.innerHTML = `
-    <span class="toast-icon">${getToastIcon(type)}</span>
     <span class="toast-message">${escapeHtml(message)}</span>
+    <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
   `;
   
   toastContainer.appendChild(toast);
   
+  // Auto-remove after 5 seconds
   setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100%)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
+    if (toast.parentElement) {
+      toast.remove();
+    }
+  }, 5000);
 }
 
-function getToastIcon(type) {
-  const icons = {
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
-    info: 'ℹ'
-  };
-  return icons[type] || 'ℹ';
-}
+// ============================================
+// Utilities
+// ============================================
 
-// Utility: Escape HTML
 function escapeHtml(text) {
-  if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-// Initialize views when project is loaded
-async function initializeWorkspaceViews() {
-  await loadAgents();
-  await loadProcesses();
-  await loadActivityLog();
+function formatTime(isoString) {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-console.log('Kipe Renderer initialized');
+// ============================================
+// Event Listeners
+// ============================================
+
+function setupEventListeners() {
+  // Welcome screen
+  document.getElementById('btn-open-project').addEventListener('click', openProjectDialog);
+  
+  // Navigation
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      switchView(item.dataset.view);
+    });
+  });
+  
+  // Close project
+  document.getElementById('btn-close-project').addEventListener('click', closeProject);
+  
+  // Kipe Swarm
+  document.getElementById('btn-swarm').addEventListener('click', startSwarm);
+  
+  // Quick actions
+  document.querySelectorAll('.action-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const action = card.dataset.action;
+      switch (action) {
+        case 'new-agent':
+          showNewAgentModal();
+          break;
+        case 'new-process':
+          // Could open a process modal
+          showToast('Process creation coming soon', 'info');
+          break;
+        case 'new-terminal':
+          switchView('terminal');
+          break;
+        case 'edit-config':
+          switchView('config');
+          break;
+      }
+    });
+  });
+  
+  // New agent button
+  document.getElementById('btn-new-agent').addEventListener('click', showNewAgentModal);
+  
+  // New process button
+  document.getElementById('btn-new-process').addEventListener('click', () => {
+    showToast('Process creation coming soon', 'info');
+  });
+  
+  // New terminal button
+  document.getElementById('btn-new-terminal').addEventListener('click', () => {
+    showToast('Terminal coming soon', 'info');
+  });
+  
+  // Save config
+  document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+  
+  // Clear activity
+  document.getElementById('btn-clear-activity').addEventListener('click', clearActivityFeed);
+  
+  // Save settings
+  document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+  
+  // Modal
+  modalAgent.querySelector('.modal-close').addEventListener('click', hideNewAgentModal);
+  
+  formAgent.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = {
+      name: document.getElementById('agent-name').value,
+      role: document.getElementById('agent-role').value,
+      instructions: document.getElementById('agent-instructions').value,
+      model: document.getElementById('agent-model').value
+    };
+    createAgent(data);
+    hideNewAgentModal();
+  });
+  
+  // Close modal on outside click
+  modalAgent.addEventListener('click', (e) => {
+    if (e.target === modalAgent) {
+      hideNewAgentModal();
+    }
+  });
+  
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Escape to close modal
+    if (e.key === 'Escape') {
+      hideNewAgentModal();
+    }
+    
+    // Cmd/Ctrl + K for command palette (future)
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      showToast('Command palette coming soon', 'info');
+    }
+  });
+}
+
+// ============================================
+// Start App
+// ============================================
+
+init();

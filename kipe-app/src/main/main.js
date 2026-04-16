@@ -1,95 +1,255 @@
-/**
- * Kipe - AI-Assisted Development Workspace
- * Main Process Entry Point
- */
-
-const { app, BrowserWindow, ipcMain, dialog, Notification, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const Store = require('electron-store');
-const yaml = require('js-yaml');
 const fs = require('fs');
-const chokidar = require('chokidar');
-const { v4: uuidv4 } = require('uuid');
+const yaml = require('js-yaml');
 
-// Initialize store
-const store = new Store({
-  name: 'kipe-config',
-  defaults: {
-    projects: [],
-    settings: {
-      theme: 'dark',
-      shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, Consolas, monospace',
-      notifications: {
-        buildComplete: true,
-        testComplete: true,
-        errorCritical: true,
-        agentTaskComplete: true,
-        interventionRequired: true
-      }
-    },
-    providers: []
+let mainWindow = null;
+let store = {
+  projects: [],
+  settings: {
+    shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
+    theme: 'dark',
+    notifications: true
   }
-});
-
-let mainWindow;
-let activeProjects = new Map(); // projectId -> project data
-let terminalSessions = new Map(); // sessionId -> pty instance
-let processes = new Map(); // processId -> process info
-let agents = new Map(); // agentId -> agent info
-let activityLog = []; // Activity events
-
-// Schema for kipe.yml
-const KIPE_YAML_SCHEMA = {
-  project: String,
-  path: String,
-  stack: Array,
-  env: Object,
-  agents: Array,
-  processes: Array,
-  watchers: Array,
-  notifications: Object,
-  orchestration: Object,
-  restartPolicy: String,
-  permissions: Object,
-  providers: Array,
-  hooks: Object
 };
+
+// Load store from disk
+function loadStore() {
+  try {
+    const storePath = path.join(app.getPath('userData'), 'kipe-store.json');
+    if (fs.existsSync(storePath)) {
+      const data = fs.readFileSync(storePath, 'utf-8');
+      store = JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load store:', err);
+  }
+}
+
+// Save store to disk
+function saveStore() {
+  try {
+    const storePath = path.join(app.getPath('userData'), 'kipe-store.json');
+    fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
+  } catch (err) {
+    console.error('Failed to save store:', err);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
-    minHeight: 768,
-    titleBarStyle: 'hiddenInset',
-    backgroundColor: '#0d1117',
+    minHeight: 700,
+    backgroundColor: '#0a0a0a',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      enableRemoteModule: true
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../renderer/assets/icon.png')
+    titleBarStyle: 'hiddenInset',
+    show: false
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  
-  // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools();
-  }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    cleanupAllProcesses();
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  loadStore();
+  createWindow();
+
+  // IPC Handlers
+  ipcMain.handle('get-projects', async () => {
+    return store.projects;
+  });
+
+  ipcMain.handle('add-project', async (event, projectPath) => {
+    // Validate path
+    try {
+      const stats = fs.statSync(projectPath);
+      if (!stats.isDirectory()) {
+        throw new Error('Not a directory');
+      }
+    } catch (err) {
+      throw new Error('Invalid project path');
+    }
+
+    // Check if already exists
+    const existing = store.projects.find(p => p.path === projectPath);
+    if (existing) {
+      return existing;
+    }
+
+    // Detect stack
+    const stack = detectStack(projectPath);
+
+    // Create project entry
+    const project = {
+      id: Date.now().toString(),
+      name: path.basename(projectPath),
+      path: projectPath,
+      stack: stack,
+      lastOpened: new Date().toISOString()
+    };
+
+    store.projects.unshift(project);
+    if (store.projects.length > 50) {
+      store.projects.pop();
+    }
+    saveStore();
+
+    return project;
+  });
+
+  ipcMain.handle('remove-project', async (event, projectId) => {
+    store.projects = store.projects.filter(p => p.id !== projectId);
+    saveStore();
+    return true;
+  });
+
+  ipcMain.handle('get-settings', async () => {
+    return store.settings;
+  });
+
+  ipcMain.handle('save-settings', async (event, settings) => {
+    store.settings = { ...store.settings, ...settings };
+    saveStore();
+    return store.settings;
+  });
+
+  ipcMain.handle('show-open-directory-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Project Folder'
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('read-kipe-yaml', async (event, projectPath) => {
+    const yamlPath = path.join(projectPath, 'kipe.yml');
+    if (!fs.existsSync(yamlPath)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(yamlPath, 'utf-8');
+      const parsed = yaml.load(content);
+      return { content, parsed };
+    } catch (err) {
+      throw new Error('Failed to parse kipe.yml: ' + err.message);
+    }
+  });
+
+  ipcMain.handle('write-kipe-yaml', async (event, projectPath, content) => {
+    const yamlPath = path.join(projectPath, 'kipe.yml');
+    try {
+      fs.writeFileSync(yamlPath, content, 'utf-8');
+      return true;
+    } catch (err) {
+      throw new Error('Failed to write kipe.yml: ' + err.message);
+    }
+  });
+
+  ipcMain.handle('get-project-files', async (event, projectPath, limit = 100) => {
+    const files = [];
+    
+    function scanDir(dir, depth = 0) {
+      if (depth > 3 || files.length >= limit) return;
+      
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') && entry.name !== '.nvmrc' && entry.name !== '.python-version') {
+            continue;
+          }
+          
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (['node_modules', '.git', 'dist', 'build', 'target'].includes(entry.name)) {
+              continue;
+            }
+            scanDir(fullPath, depth + 1);
+          } else {
+            files.push({
+              name: entry.name,
+              path: fullPath,
+              relative: path.relative(projectPath, fullPath)
+            });
+            
+            if (files.length >= limit) break;
+          }
+        }
+      } catch (err) {
+        // Ignore errors
+      }
+    }
+    
+    scanDir(projectPath);
+    return files;
+  });
+});
+
+function detectStack(projectPath) {
+  const indicators = {
+    'JavaScript/Node.js': ['package.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'],
+    'TypeScript': ['tsconfig.json', 'tsconfig.tsbuildinfo'],
+    'Python': ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile'],
+    'Rust': ['Cargo.toml', 'Cargo.lock'],
+    'Go': ['go.mod', 'go.sum'],
+    'Java': ['pom.xml', 'build.gradle', 'settings.gradle'],
+    'Ruby': ['Gemfile', 'Gemfile.lock'],
+    'PHP': ['composer.json', 'composer.lock'],
+    'Docker': ['Dockerfile', 'docker-compose.yml'],
+    'React': ['src/App.jsx', 'src/App.tsx', 'public/index.html']
+  };
+
+  const detected = [];
+  
+  for (const [stack, files] of Object.entries(indicators)) {
+    for (const file of files) {
+      const fullPath = path.join(projectPath, file);
+      if (fs.existsSync(fullPath)) {
+        detected.push(stack);
+        break;
+      }
+    }
+  }
+
+  // Detect scripts from package.json
+  try {
+    const pkgPath = path.join(projectPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (pkg.scripts) {
+        const commonScripts = ['dev', 'start', 'build', 'test', 'lint'];
+        const foundScripts = commonScripts.filter(s => pkg.scripts[s]);
+        if (foundScripts.length > 0) {
+          detected.push(`Scripts: ${foundScripts.join(', ')}`);
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore
+  }
+
+  return detected.length > 0 ? detected : ['Unknown'];
+}
 
 app.on('window-all-closed', () => {
-  cleanupAllProcesses();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -100,288 +260,3 @@ app.on('activate', () => {
     createWindow();
   }
 });
-
-// IPC Handlers
-
-// Project Management
-ipcMain.handle('get-projects', () => {
-  return store.get('projects', []);
-});
-
-ipcMain.handle('add-project', async (event, projectPath) => {
-  try {
-    const stats = fs.statSync(projectPath);
-    if (!stats.isDirectory()) {
-      throw new Error('Invalid directory');
-    }
-
-    const projectConfig = await loadProjectConfig(projectPath);
-    const stack = await detectStack(projectPath);
-    
-    const project = {
-      id: uuidv4(),
-      name: path.basename(projectPath),
-      path: projectPath,
-      stack,
-      lastOpened: Date.now(),
-      config: projectConfig
-    };
-
-    const projects = store.get('projects', []);
-    const existingIndex = projects.findIndex(p => p.path === projectPath);
-    
-    if (existingIndex >= 0) {
-      projects[existingIndex] = { ...projects[existingIndex], ...project };
-    } else {
-      projects.unshift(project);
-    }
-
-    store.set('projects', projects.slice(0, 50)); // Keep last 50 projects
-    activeProjects.set(project.id, project);
-    
-    return project;
-  } catch (error) {
-    console.error('Error adding project:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('open-project', (event, projectId) => {
-  const projects = store.get('projects', []);
-  const project = projects.find(p => p.id === projectId) || projects.find(p => p.path === projectId);
-  
-  if (project) {
-    activeProjects.set(project.id || projectId, project);
-    return project;
-  }
-  return null;
-});
-
-ipcMain.handle('remove-project', (event, projectId) => {
-  const projects = store.get('projects', []);
-  const filtered = projects.filter(p => p.id !== projectId);
-  store.set('projects', filtered);
-  activeProjects.delete(projectId);
-  return true;
-});
-
-// Load and parse kipe.yml
-async function loadProjectConfig(projectPath) {
-  const configPath = path.join(projectPath, 'kipe.yml');
-  const configPathYaml = path.join(projectPath, 'kipe.yaml');
-  
-  try {
-    const content = fs.existsSync(configPath) 
-      ? fs.readFileSync(configPath, 'utf-8')
-      : fs.existsSync(configPathYaml)
-        ? fs.readFileSync(configPathYaml, 'utf-8')
-        : null;
-    
-    if (content) {
-      return yaml.load(content);
-    }
-  } catch (error) {
-    console.error('Error loading kipe.yml:', error);
-  }
-  
-  return generateDefaultConfig(projectPath);
-}
-
-// Auto-detect project stack
-async function detectStack(projectPath) {
-  const stack = [];
-  const files = await fs.promises.readdir(projectPath).catch(() => []);
-  
-  const indicators = {
-    'package.json': 'nodejs',
-    'pnpm-lock.yaml': 'pnpm',
-    'yarn.lock': 'yarn',
-    'bun.lock': 'bun',
-    'requirements.txt': 'python',
-    'pyproject.toml': 'python',
-    'Cargo.toml': 'rust',
-    'go.mod': 'go',
-    'Procfile': 'heroku',
-    '.nvmrc': 'nodejs-nvm',
-    '.python-version': 'python-pyenv',
-    'Gemfile': 'ruby',
-    'composer.json': 'php',
-    'pom.xml': 'java-maven',
-    'build.gradle': 'java-gradle',
-    'CMakeLists.txt': 'cpp-cmake',
-    'Makefile': 'make',
-    'Dockerfile': 'docker',
-    'docker-compose.yml': 'docker-compose',
-    '.git': 'git',
-    'README.md': 'markdown',
-    'tsconfig.json': 'typescript'
-  };
-
-  for (const [file, tech] of Object.entries(indicators)) {
-    if (files.includes(file)) {
-      stack.push(tech);
-    }
-  }
-
-  // Detect scripts from package.json
-  try {
-    const pkgPath = path.join(projectPath, 'package.json');
-    if (files.includes('package.json')) {
-      const pkg = JSON.parse(await fs.promises.readFile(pkgPath, 'utf-8'));
-      if (pkg.scripts) {
-        stack.push(...Object.keys(pkg.scripts).map(s => `script:${s}`));
-      }
-    }
-  } catch (e) {}
-
-  return stack.length > 0 ? stack : ['unknown'];
-}
-
-// Generate default kipe.yml config
-function generateDefaultConfig(projectPath) {
-  const stack = detectStack(projectPath);
-  
-  return {
-    project: path.basename(projectPath),
-    path: projectPath,
-    stack: stack,
-    env: {
-      NODE_ENV: 'development'
-    },
-    agents: [
-      {
-        id: uuidv4(),
-        name: 'Code Agent',
-        role: 'code-assistant',
-        instructions: 'Help with code review, refactoring, and best practices',
-        model: 'default',
-        contextDir: './src',
-        tools: ['read-files', 'write-files', 'search-code'],
-        commands: ['npm run dev', 'npm run build', 'npm test'],
-        permissions: ['read', 'write'],
-        status: 'idle'
-      }
-    ],
-    processes: [
-      {
-        id: uuidv4(),
-        name: 'Dev Server',
-        command: 'npm run dev',
-        autoStart: false,
-        restartPolicy: 'on-failure',
-        cwd: projectPath
-      }
-    ],
-    watchers: [],
-    notifications: {
-      enabled: true,
-      events: ['error', 'complete']
-    },
-    orchestration: {
-      mode: 'parallel',
-      maxConcurrent: 5
-    },
-    restartPolicy: 'on-failure',
-    permissions: {
-      allowFileSystemAccess: true,
-      allowNetworkAccess: true,
-      allowShellCommands: true
-    },
-    providers: [
-      {
-        name: 'default',
-        type: 'openai',
-        apiKey: '${OPENAI_API_KEY}'
-      }
-    ],
-    hooks: {
-      onProjectOpen: [],
-      onSwarmStart: [],
-      onProcessExit: []
-    }
-  };
-}
-
-// Save kipe.yml
-ipcMain.handle('save-kipe-yml', async (event, projectId, config) => {
-  try {
-    const project = activeProjects.get(projectId);
-    if (!project) {
-      throw new Error('Project not found');
-    }
-
-    const configPath = path.join(project.path, 'kipe.yml');
-    const yamlContent = yaml.dump(config, { indent: 2 });
-    
-    await fs.promises.writeFile(configPath, yamlContent, 'utf-8');
-    project.config = config;
-    activeProjects.set(projectId, project);
-    
-    return { success: true, path: configPath };
-  } catch (error) {
-    console.error('Error saving kipe.yml:', error);
-    throw error;
-  }
-});
-
-// Settings
-ipcMain.handle('get-settings', () => {
-  return store.get('settings');
-});
-
-ipcMain.handle('save-settings', (event, settings) => {
-  store.set('settings', settings);
-  return true;
-});
-
-// Activity Log
-function addActivityEvent(event) {
-  const activityEvent = {
-    id: uuidv4(),
-    timestamp: Date.now(),
-    ...event
-  };
-  
-  activityLog.unshift(activityEvent);
-  
-  // Keep last 1000 events
-  if (activityLog.length > 1000) {
-    activityLog = activityLog.slice(0, 1000);
-  }
-  
-  if (mainWindow) {
-    mainWindow.webContents.send('activity-event', activityEvent);
-  }
-  
-  return activityEvent;
-}
-
-ipcMain.handle('get-activity-log', () => {
-  return activityLog;
-});
-
-ipcMain.handle('clear-activity-log', () => {
-  activityLog = [];
-  return true;
-});
-
-// Cleanup
-function cleanupAllProcesses() {
-  terminalSessions.forEach((session, id) => {
-    try {
-      session.kill();
-    } catch (e) {}
-  });
-  terminalSessions.clear();
-  
-  processes.forEach((proc, id) => {
-    try {
-      if (proc.pid) {
-        process.kill(proc.pid);
-      }
-    } catch (e) {}
-  });
-  processes.clear();
-}
-
-console.log('Kipe Main Process initialized');
